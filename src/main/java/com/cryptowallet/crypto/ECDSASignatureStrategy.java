@@ -1,8 +1,18 @@
 package com.cryptowallet.crypto;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import java.security.*;
-import java.security.spec.*;
+
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Security;
+import java.security.Signature;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
 public class ECDSASignatureStrategy implements SignatureStrategy {
@@ -17,7 +27,8 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
     public EncodedKeyPair generateKeyPair() {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance(CURVE, "BC");
-            generator.initialize(256);
+            ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp256k1"); // Named curve
+            generator.initialize(ecSpec);
             KeyPair keyPair = generator.generateKeyPair();
 
             String publicKeyEncoded = Base64.getEncoder().encodeToString(
@@ -36,7 +47,7 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
 
     @Override
     public String sign(String data, String base64PrivateKey) {
-        try{
+        try {
             byte[] privateBytes = Base64.getDecoder().decode(base64PrivateKey);
             PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(privateBytes);
             KeyFactory factory = KeyFactory.getInstance(CURVE, "BC");
@@ -44,10 +55,10 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
 
             Signature signature = Signature.getInstance(ALGO, "BC");
             signature.initSign(privateKey);
-            signature.update(data.getBytes());
+            signature.update(data.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(signature.sign());
         } catch (Exception e) {
-            throw new RuntimeException("Signing failed");
+            throw new RuntimeException("Signing failed", e);
         }
     }
 
@@ -62,6 +73,7 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
             Signature signature = Signature.getInstance(ALGO, "BC");
             signature.initVerify(publicKey);
             byte[] sigBytes = Base64.getDecoder().decode(signatureStr);
+            signature.update(data.getBytes(StandardCharsets.UTF_8));
             return signature.verify(sigBytes);
         } catch (Exception e) {
             return false;
