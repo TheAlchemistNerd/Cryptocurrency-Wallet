@@ -50,3 +50,6 @@ doc.html
 *.pid
 *.tar
 docker-compose.override.yml
+
+
+*.yml
