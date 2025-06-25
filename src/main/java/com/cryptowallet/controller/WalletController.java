@@ -5,13 +5,10 @@ import com.cryptowallet.dto.WalletDTO;
 import com.cryptowallet.service.WalletService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1/wallets")
+@RequestMapping("/api")
 public class WalletController {
     private final WalletService walletService;
 
@@ -19,9 +16,16 @@ public class WalletController {
         this.walletService = walletService;
     }
 
-    @PostMapping
-    public ResponseEntity<WalletDTO> createWallet(@RequestBody CreateWalletRequestDTO dto) {
+    @PostMapping("/users/{userId}/wallets")
+    public ResponseEntity<WalletDTO> createWallet(@PathVariable String userId) {
+        CreateWalletRequestDTO dto = new CreateWalletRequestDTO(userId);
         WalletDTO wallet = walletService.createWallet(dto);
         return new ResponseEntity<>(wallet, HttpStatus.CREATED);
+    }
+
+    @GetMapping("/wallets/{walletId}")
+    public ResponseEntity<WalletDTO> getWallet(@PathVariable String walletId) {
+        WalletDTO wallet = walletService.getWalletById(walletId);
+        return ResponseEntity.ok(wallet);
     }
 }

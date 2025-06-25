@@ -4,6 +4,7 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -13,11 +14,12 @@ public class AESEncryptionStrategy implements EncryptionStrategy {
     private static final int IV_LENGTH = 12;
     private static final int TAG_LENGTH = 128;
 
-    private final String secret;
+    private final SecretKey key;
 
     public AESEncryptionStrategy(String secret) {
-        if (secret.length() != 32) throw new IllegalArgumentException("AES key must be 32 bytes (256 bits)");
-        this.secret = secret;
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length != 32) throw new IllegalArgumentException("AES key must be 32 bytes (256 bits)");
+        this.key = new SecretKeySpec(keyBytes, "AES");
     }
 
     @Override
@@ -28,10 +30,9 @@ public class AESEncryptionStrategy implements EncryptionStrategy {
             GCMParameterSpec spec = new GCMParameterSpec(TAG_LENGTH, iv);
 
             Cipher cipher = Cipher.getInstance(ALGO);
-            SecretKey key = new SecretKeySpec(secret.getBytes(), "AES");
             cipher.init(Cipher.ENCRYPT_MODE, key, spec);
 
-            byte[] encrypted = cipher.doFinal(data.getBytes());
+            byte[] encrypted = cipher.doFinal(data.getBytes(StandardCharsets.UTF_8));
             byte[] encryptedWithIv = new byte[iv.length + encrypted.length];
             System.arraycopy(iv, 0, encryptedWithIv, 0, iv.length);
             System.arraycopy(encrypted, 0, encryptedWithIv, iv.length, encrypted.length);
@@ -55,11 +56,10 @@ public class AESEncryptionStrategy implements EncryptionStrategy {
 
             GCMParameterSpec spec = new GCMParameterSpec(TAG_LENGTH, iv);
             Cipher cipher = Cipher.getInstance(ALGO);
-            SecretKey key = new SecretKeySpec(secret.getBytes(), "AES");
             cipher.init(Cipher.DECRYPT_MODE, key, spec);
 
             byte[] decrypted = cipher.doFinal(cipherBytes);
-            return new String(decrypted);
+            return new String(decrypted, StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new RuntimeException("Decryption error", e);
         }

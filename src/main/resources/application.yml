@@ -1,0 +1,15 @@
+server:
+  port: 8080
+
+spring:
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI}
+
+crypto:
+  aes:
+    secret: ${CRYPTO_AES_SECRET}
+
+jwt:
+  secret: ${JWT_SECRET_KEY}
+  expiration: ${JWT_EXPIRATION:3600000}

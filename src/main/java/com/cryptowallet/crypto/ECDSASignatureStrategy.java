@@ -76,6 +76,7 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
             signature.update(data.getBytes(StandardCharsets.UTF_8));
             return signature.verify(sigBytes);
         } catch (Exception e) {
+            e.printStackTrace();
             return false;
         }
     }

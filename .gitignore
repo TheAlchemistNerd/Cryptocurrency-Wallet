@@ -35,8 +35,12 @@ surefire-reports/
 test-output/
 
 # Environment files
-.env
-*.env
+# Ignore environment-specific secrets
+.env.prod
+.env.test
+
+# But keep the template (shared safely)
+!.env.template
 
 # Local MongoDB data (if stored locally)
 data/
@@ -49,7 +53,3 @@ doc.html
 # Docker
 *.pid
 *.tar
-docker-compose.override.yml
-
-
-*.yml

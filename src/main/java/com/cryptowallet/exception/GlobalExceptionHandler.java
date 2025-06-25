@@ -6,6 +6,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,6 +21,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InsufficientBalanceException.class)
     public ResponseEntity<Map<String, String>> handleInsufficientBalance(InsufficientBalanceException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<String> handleUserExists(UserAlreadyExistsException ex) {
+        return ResponseEntity.status(409).body(ex.getMessage());
+    }
+
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<Object> handleAuthenticationFailed(AuthenticationFailedException ex) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("timestamp", Instant.now());
+        error.put("status", HttpStatus.UNAUTHORIZED.value());
+        error.put("error", "Unauthorized");
+        error.put("message", ex.getMessage());
+
+        return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
