@@ -1,4 +1,4 @@
-package com.cryptowallet;
+package com.cryptowallet.crypto;
 
 import com.cryptowallet.crypto.AESEncryptionStrategy;
 import org.junit.jupiter.api.Test;

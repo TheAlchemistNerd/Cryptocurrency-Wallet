@@ -1,6 +1,5 @@
-package com.cryptowallet;
+package com.cryptowallet.domain;
 
-import com.cryptowallet.domain.Transaction;
 import org.junit.jupiter.api.Test;
 import java.util.Date;
 

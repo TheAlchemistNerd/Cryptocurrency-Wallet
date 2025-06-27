@@ -23,22 +23,26 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
     private static final String ALGO = "SHA256withECDSA";
     private static final String CURVE = "EC";
 
+    private static String PROVIDER = "BC";
+
+    private static final String CURVE_SPEC = "secp256k1";
+
     @Override
     public EncodedKeyPair generateKeyPair() {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance(CURVE, "BC");
-            ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp256k1"); // Named curve
+            ECGenParameterSpec ecSpec = new ECGenParameterSpec(CURVE_SPEC); // Named curve
             generator.initialize(ecSpec);
             KeyPair keyPair = generator.generateKeyPair();
 
-            String publicKeyEncoded = Base64.getEncoder().encodeToString(
+            String publicKey = Base64.getEncoder().encodeToString(
                     keyPair.getPublic().getEncoded()
             );
-            String privateKeyEncoded = Base64.getEncoder().encodeToString(
+            String privateKey = Base64.getEncoder().encodeToString(
                     keyPair.getPrivate().getEncoded()
             );
 
-            return new EncodedKeyPair(publicKeyEncoded, privateKeyEncoded);
+            return new EncodedKeyPair(publicKey, privateKey);
 
         } catch (Exception e) {
             throw new RuntimeException("Key generation failed", e);

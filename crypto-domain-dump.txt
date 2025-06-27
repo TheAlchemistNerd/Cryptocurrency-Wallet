@@ -1,0 +1,1586 @@
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\CryptoWalletApplication.java =====
+
+package com.cryptowallet;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class CryptoWalletApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(CryptoWalletApplication.class, args);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\config\CryptoConfig.java =====
+
+package com.cryptowallet.config;
+
+import com.cryptowallet.crypto.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class CryptoConfig {
+
+    @Value("${crypto.aes.secret}")
+    private String aesSecret;
+
+    // 🔐 Strategy Beans
+    @Bean
+    public EncryptionStrategy encryptionStrategy() {
+        return new AESEncryptionStrategy(aesSecret);
+    }
+
+    @Bean
+    public SignatureStrategy signatureStrategy() {
+        return new ECDSASignatureStrategy();
+    }
+
+    // 💼 Service Beans (decoupled from concrete strategies)
+    @Bean
+    public EncryptionService encryptionService(EncryptionStrategy encryptionStrategy) {
+        return new EncryptionService(encryptionStrategy);
+    }
+
+    @Bean
+    public SignatureService signatureService(SignatureStrategy signatureStrategy) {
+        return new SignatureService(signatureStrategy);
+    }
+
+    @Bean
+    public CryptoFacade cryptoFacade(EncryptionService encryptionService, SignatureService signatureService) {
+        return new CryptoFacade(encryptionService, signatureService);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\config\SecurityConfig.java =====
+
+package com.cryptowallet.config;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import javax.crypto.SecretKey;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+
+@Configuration
+@Slf4j
+public class SecurityConfig {
+
+    @Value("${JWT_SECRET_KEY}")
+    private String jwtSecret;
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        http
+            .authorizeHttpRequests(auth -> auth
+                    .requestMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login").permitAll()
+                    .anyRequest().authenticated()
+            )
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(new JwtAuthFilter(key), UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+
+    public static class JwtAuthFilter extends OncePerRequestFilter {
+
+        private final SecretKey key;
+
+        public JwtAuthFilter(SecretKey key) {
+            this.key = key;
+        }
+
+        @Override
+        protected boolean shouldNotFilter(HttpServletRequest request) {
+            String path = request.getServletPath();
+            return path.equals("/api/users/register") || path.equals("api/users/login");
+        }
+
+        @Override
+        public void doFilterInternal(HttpServletRequest request,
+                                     HttpServletResponse response,
+                                     FilterChain chain)
+                throws ServletException, IOException {
+
+            String header = request.getHeader("Authorization");
+
+            if (header != null && header.startsWith("Bearer")) {
+                String token = header.substring(7);
+
+                try {
+                    Claims claims = Jwts
+                            .parserBuilder()
+                            .setSigningKey(key)
+                            .build()
+                            .parseClaimsJws(token)
+                            .getBody();
+
+                    String userId = claims.getSubject();
+                    String userName = claims.get("userName", String.class);
+
+                    var auth = new UsernamePasswordAuthenticationToken(
+                            new User(userName, "", Collections.emptyList()),
+                            null,
+                            Collections.emptyList()
+                    );
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                } catch (Exception e) {
+                    log.warn("JWT validation failed: {}", e.getMessage());
+                }
+            }
+
+            chain.doFilter(request, response);
+        }
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\controller\TransactionController.java =====
+
+package com.cryptowallet.controller;
+
+import com.cryptowallet.dto.SendTransactionRequestDTO;
+import com.cryptowallet.dto.TransactionDTO;
+import com.cryptowallet.service.TransactionService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/transactions")
+public class TransactionController {
+    private final TransactionService txService;
+
+    public TransactionController(TransactionService txService) {
+        this.txService = txService;
+    }
+
+    @PostMapping
+    public ResponseEntity<TransactionDTO> sendTransaction(@RequestBody SendTransactionRequestDTO dto) {
+        TransactionDTO response = txService.processTransaction(dto);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\controller\UserController.java =====
+
+package com.cryptowallet.controller;
+
+import com.cryptowallet.dto.LoginRequestDTO;
+import com.cryptowallet.dto.LoginResponseDTO;
+import com.cryptowallet.dto.RegisterUserRequestDTO;
+import com.cryptowallet.dto.UserDTO;
+import com.cryptowallet.service.JwtService;
+import com.cryptowallet.service.UserService;
+import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/users")
+@Slf4j
+public class UserController {
+
+    private final UserService userService;
+    private final JwtService jwtService;
+
+
+    public UserController(UserService userService, JwtService jwtService) {
+        this.userService = userService;
+        this.jwtService = jwtService;
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<UserDTO> register(@Valid @RequestBody RegisterUserRequestDTO request) {
+        log.info("Registering new user: {}", request.userName());
+        UserDTO created = userService.registerUser(request);
+        return ResponseEntity.ok(created);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponseDTO> login(@Valid @RequestBody LoginRequestDTO request) {
+        log.info("Attempting login for user: {}", request.userName());
+        String token = jwtService.authenticateAndGenerateToken(request);
+        return ResponseEntity.ok(new LoginResponseDTO(token));
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\controller\WalletController.java =====
+
+package com.cryptowallet.controller;
+
+import com.cryptowallet.dto.CreateWalletRequestDTO;
+import com.cryptowallet.dto.WalletDTO;
+import com.cryptowallet.service.WalletService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api")
+public class WalletController {
+    private final WalletService walletService;
+
+    public WalletController(WalletService walletService) {
+        this.walletService = walletService;
+    }
+
+    @PostMapping("/users/{userId}/wallets")
+    public ResponseEntity<WalletDTO> createWallet(@PathVariable String userId) {
+        CreateWalletRequestDTO dto = new CreateWalletRequestDTO(userId);
+        WalletDTO wallet = walletService.createWallet(dto);
+        return new ResponseEntity<>(wallet, HttpStatus.CREATED);
+    }
+
+    @GetMapping("/wallets/{walletId}")
+    public ResponseEntity<WalletDTO> getWallet(@PathVariable String walletId) {
+        WalletDTO wallet = walletService.getWalletById(walletId);
+        return ResponseEntity.ok(wallet);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\AESEncryptionStrategy.java =====
+
+package com.cryptowallet.crypto;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
+
+public class AESEncryptionStrategy implements EncryptionStrategy {
+
+    private static final String ALGO = "AES/GCM/NoPadding";
+    private static final int IV_LENGTH = 12;
+    private static final int TAG_LENGTH = 128;
+
+    private final SecretKey key;
+
+    public AESEncryptionStrategy(String secret) {
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length != 32) throw new IllegalArgumentException("AES key must be 32 bytes (256 bits)");
+        this.key = new SecretKeySpec(keyBytes, "AES");
+    }
+
+    @Override
+    public String encrypt(String data) {
+        try {
+            byte[] iv = new byte[IV_LENGTH];
+            new SecureRandom().nextBytes(iv); // generate new IV per encryption
+            GCMParameterSpec spec = new GCMParameterSpec(TAG_LENGTH, iv);
+
+            Cipher cipher = Cipher.getInstance(ALGO);
+            cipher.init(Cipher.ENCRYPT_MODE, key, spec);
+
+            byte[] encrypted = cipher.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            byte[] encryptedWithIv = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, encryptedWithIv, 0, iv.length);
+            System.arraycopy(encrypted, 0, encryptedWithIv, iv.length, encrypted.length);
+
+            return Base64.getEncoder().encodeToString(encryptedWithIv);
+        } catch (Exception e) {
+            throw new RuntimeException("Encryption error", e);
+        }
+    }
+
+    @Override
+    public String decrypt(String cipherText) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(cipherText);
+
+            byte[] iv = new byte[IV_LENGTH];
+            byte[] cipherBytes = new byte[decoded.length - IV_LENGTH];
+
+            System.arraycopy(decoded, 0, iv, 0, IV_LENGTH);
+            System.arraycopy(decoded, IV_LENGTH, cipherBytes, 0, cipherBytes.length);
+
+            GCMParameterSpec spec = new GCMParameterSpec(TAG_LENGTH, iv);
+            Cipher cipher = Cipher.getInstance(ALGO);
+            cipher.init(Cipher.DECRYPT_MODE, key, spec);
+
+            byte[] decrypted = cipher.doFinal(cipherBytes);
+            return new String(decrypted, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("Decryption error", e);
+        }
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\CryptoFacade.java =====
+
+package com.cryptowallet.crypto;
+
+public class CryptoFacade {
+    private final EncryptionService encryptionService;
+    private final SignatureService signatureService;
+
+    public CryptoFacade(EncryptionService encryptionService, SignatureService signatureService) {
+        this.encryptionService = encryptionService;
+        this.signatureService = signatureService;
+    }
+
+    public String encryptPrivateKey(String data) {
+        return encryptionService.encrypt(data);
+    }
+
+    public String decryptPrivateKey(String cipherText) {
+        return encryptionService.decrypt(cipherText);
+    }
+
+    public EncodedKeyPair generateKeyPair() {
+        return signatureService.generateKeyPair();
+    }
+
+    public String signData(String data, String privateKey) {
+        return signatureService.sign(data, privateKey);
+    }
+
+    public boolean verifySignature(String data, String signature, String publicKey) {
+        return signatureService.verifySignature(data, signature, publicKey);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\ECDSASignatureStrategy.java =====
+
+package com.cryptowallet.crypto;
+
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.Security;
+import java.security.Signature;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
+
+public class ECDSASignatureStrategy implements SignatureStrategy {
+    static {
+        Security.addProvider(new BouncyCastleProvider());
+    }
+
+    private static final String ALGO = "SHA256withECDSA";
+    private static final String CURVE = "EC";
+
+    @Override
+    public EncodedKeyPair generateKeyPair() {
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance(CURVE, "BC");
+            ECGenParameterSpec ecSpec = new ECGenParameterSpec("secp256k1"); // Named curve
+            generator.initialize(ecSpec);
+            KeyPair keyPair = generator.generateKeyPair();
+
+            String publicKeyEncoded = Base64.getEncoder().encodeToString(
+                    keyPair.getPublic().getEncoded()
+            );
+            String privateKeyEncoded = Base64.getEncoder().encodeToString(
+                    keyPair.getPrivate().getEncoded()
+            );
+
+            return new EncodedKeyPair(publicKeyEncoded, privateKeyEncoded);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Key generation failed", e);
+        }
+    }
+
+    @Override
+    public String sign(String data, String base64PrivateKey) {
+        try {
+            byte[] privateBytes = Base64.getDecoder().decode(base64PrivateKey);
+            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(privateBytes);
+            KeyFactory factory = KeyFactory.getInstance(CURVE, "BC");
+            PrivateKey privateKey = factory.generatePrivate(keySpec);
+
+            Signature signature = Signature.getInstance(ALGO, "BC");
+            signature.initSign(privateKey);
+            signature.update(data.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(signature.sign());
+        } catch (Exception e) {
+            throw new RuntimeException("Signing failed", e);
+        }
+    }
+
+    @Override
+    public boolean verify(String data, String signatureStr, String base64PublicKey) {
+        try {
+            byte[] publicBytes = Base64.getDecoder().decode(base64PublicKey);
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicBytes);
+            KeyFactory factory = KeyFactory.getInstance(CURVE, "BC");
+            PublicKey publicKey = factory.generatePublic(keySpec);
+
+            Signature signature = Signature.getInstance(ALGO, "BC");
+            signature.initVerify(publicKey);
+            byte[] sigBytes = Base64.getDecoder().decode(signatureStr);
+            signature.update(data.getBytes(StandardCharsets.UTF_8));
+            return signature.verify(sigBytes);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\EncodedKeyPair.java =====
+
+package com.cryptowallet.crypto;
+/**
+ * A simple DTO that holds Base64-encoded versions
+ * of the public and private keys.
+ */
+public class EncodedKeyPair {
+    private final String publicKey;
+    private final String privateKey;
+
+    public EncodedKeyPair(String publicKey, String privateKey) {
+        this.publicKey = publicKey;
+        this.privateKey = privateKey;
+    }
+
+    public String getPublic() { return publicKey; }
+    public String getPrivate() { return privateKey; }
+}
+
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\EncryptionService.java =====
+
+package com.cryptowallet.crypto;
+
+public class EncryptionService {
+    private final EncryptionStrategy strategy;
+
+    public EncryptionService(EncryptionStrategy strategy) {
+        this.strategy = strategy;
+    }
+
+    public String encrypt(String data) {
+        return strategy.encrypt(data);
+    }
+
+    public String decrypt(String cipher) {
+        return strategy.decrypt(cipher);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\EncryptionStrategy.java =====
+
+package com.cryptowallet.crypto;
+
+public interface EncryptionStrategy {
+    String encrypt(String data);
+    String decrypt(String cipherText);
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\SignatureService.java =====
+
+package com.cryptowallet.crypto;
+
+public class SignatureService {
+    private final SignatureStrategy strategy;
+
+    public SignatureService(SignatureStrategy strategy) {
+        this.strategy = strategy;
+    }
+
+
+    public EncodedKeyPair generateKeyPair() {
+        return strategy.generateKeyPair();
+    }
+
+    public String sign(String data, String privateKey) {
+        return strategy.sign(data, privateKey);
+    }
+
+    public boolean verifySignature(String data, String signature, String publicKey) {
+        return strategy.verify(data, signature, publicKey);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\crypto\SignatureStrategy.java =====
+
+package com.cryptowallet.crypto;
+
+public interface SignatureStrategy {
+    EncodedKeyPair generateKeyPair();
+    String sign(String data, String base64PrivateKey);
+    boolean verify(String data, String signature, String base64PublicKey);
+
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\domain\Transaction.java =====
+
+package com.cryptowallet.domain;
+
+import java.util.Date;
+
+public class Transaction {
+    private final String transactionId;
+    private final String senderAddress;
+    private final String receiverAddress;
+    private final double amount;
+    private final Date timestamp;
+    private final String signature;
+
+    private Transaction (Builder builder) {
+        this.transactionId = builder.transactionId;
+        this.senderAddress = builder.senderAddress;
+        this.receiverAddress =builder.receiverAddress;
+        this.amount = builder.amount;
+        this.timestamp = builder.timestamp;
+        this.signature = builder.signature;
+
+    }
+
+    public static class Builder {
+        private String transactionId;
+        private String senderAddress;
+        private String receiverAddress;
+        private double amount;
+        private Date timestamp;
+        private String signature;
+
+        public Builder transactionId(String id) {
+            this.transactionId = id; return this;
+        }
+
+        public Builder senderAddress(String sender) {
+            this.senderAddress = sender; return this;
+        }
+
+        public Builder receiverAddress(String receiver) {
+            this.receiverAddress = receiver; return this;
+        }
+
+        public Builder amount(double amt) {
+            this.amount = amt; return this;
+        }
+
+        public Builder timestamp(Date time) {
+            this.timestamp = time; return this;
+        }
+
+        public Builder signature(String sign) {
+            this.signature = sign; return this;
+        }
+
+        public Transaction build() {
+            return new Transaction(this);
+        }
+    }
+
+    public String getTransactionId() {
+        return transactionId;
+    }
+
+    public String getSenderAddress() {
+        return senderAddress;
+    }
+
+    public String getReceiverAddress() {
+        return receiverAddress;
+    }
+
+    public double getAmount() {
+        return amount;
+    }
+
+    public Date getTimestamp() {
+        return timestamp;
+    }
+
+    public String getSignature() {
+        return signature;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\domain\User.java =====
+
+package com.cryptowallet.domain;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class User {
+    private String userId;
+    private String username;
+    private List<Wallet> wallets = new ArrayList<>();
+
+    public User(String userId, String username) {
+        this.userId = userId;
+        this.username = username;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public List<Wallet> getWallets() {
+        return wallets;
+    }
+
+    public void addWallet(Wallet wallet) {
+        this.wallets.add(wallet);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\domain\Wallet.java =====
+
+package com.cryptowallet.domain;
+
+public class Wallet {
+    private String walletId;
+    private String publicKey;
+    private String encryptedPrivateKey;
+    private double balance;
+
+    public Wallet(String walletId, String publicKey, String encryptedPrivateKey, double balance) {
+        this.walletId = walletId;
+        this.publicKey = publicKey;
+        this.encryptedPrivateKey = encryptedPrivateKey;
+        this.balance = balance;
+    }
+
+    public String getWalletId() {
+        return walletId;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public String getEncryptedPrivateKey() {
+        return encryptedPrivateKey;
+    }
+
+    public double getBalance() {
+        return balance;
+    }
+
+    public void setBalance(double balance) {
+        this.balance = balance;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\domain\WalletFactory.java =====
+
+package com.cryptowallet.domain;
+
+import com.cryptowallet.crypto.CryptoFacade;
+import com.cryptowallet.crypto.EncodedKeyPair;
+
+import java.util.UUID;
+
+public class WalletFactory {
+
+    private final CryptoFacade cryptoFacade;
+
+    public WalletFactory(CryptoFacade cryptoFacade) {
+        this.cryptoFacade = cryptoFacade;
+    }
+
+    public Wallet createWallet(String userId) {
+        EncodedKeyPair keyPair = cryptoFacade.generateKeyPair();
+        String publicKey = keyPair.getPublic();
+        String encryptedPrivateKey = cryptoFacade.encryptPrivateKey(keyPair.getPrivate());
+        String walletId = UUID.randomUUID().toString();
+
+        return new Wallet(walletId, publicKey, encryptedPrivateKey, 0.0);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\CreateWalletRequestDTO.java =====
+
+package com.cryptowallet.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public record CreateWalletRequestDTO(
+    @NotBlank(message = "userId must not be blank")
+    String userId
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\LoginRequestDTO.java =====
+
+package com.cryptowallet.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public record LoginRequestDTO(
+        @NotBlank String userName,
+        @NotBlank String password
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\LoginResponseDTO.java =====
+
+package com.cryptowallet.dto;
+
+public record LoginResponseDTO (
+      String token
+){}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\RegisterUserRequestDTO.java =====
+
+package com.cryptowallet.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+public record RegisterUserRequestDTO(
+    @NotBlank String userName,
+    @NotBlank String password
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\SendTransactionRequestDTO.java =====
+
+package com.cryptowallet.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+
+public record SendTransactionRequestDTO (
+    @NotBlank(message = "senderWalletId must not be blank")
+    String senderWalletId,
+    @NotBlank(message = "receiverAddress must not be blank")
+    String receiverAddress,
+    @Positive(message = "amount must be positive")
+    double amount
+){
+    public String generateIdempotencyKey() {
+       return senderWalletId + ":" + receiverAddress + ":" + amount;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\TransactionDTO.java =====
+
+package com.cryptowallet.dto;
+
+import java.util.Date;
+
+public record TransactionDTO(
+    String transactionId,
+    String senderAddress,
+    String receiverAddress,
+    double amount,
+    Date timestamp,
+    String signature
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\UserDTO.java =====
+
+package com.cryptowallet.dto;
+
+public record UserDTO(
+    String id,
+    String userName
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\dto\WalletDTO.java =====
+
+package com.cryptowallet.dto;
+
+public record WalletDTO(
+    String walletId,
+    String userId,
+    String publicKey,
+    double balance
+) {}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\exception\AuthenticationFailedException.java =====
+
+package com.cryptowallet.exception;
+
+public class AuthenticationFailedException extends RuntimeException {
+    public AuthenticationFailedException(String message) {
+        super(message);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\exception\GlobalExceptionHandler.java =====
+
+package com.cryptowallet.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(WalletNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleWalletNotFound(WalletNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InsufficientBalanceException.class)
+    public ResponseEntity<Map<String, String>> handleInsufficientBalance(InsufficientBalanceException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ResponseEntity<String> handleUserExists(UserAlreadyExistsException ex) {
+        return ResponseEntity.status(409).body(ex.getMessage());
+    }
+
+
+    @ExceptionHandler(AuthenticationFailedException.class)
+    public ResponseEntity<Object> handleAuthenticationFailed(AuthenticationFailedException ex) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("timestamp", Instant.now());
+        error.put("status", HttpStatus.UNAUTHORIZED.value());
+        error.put("error", "Unauthorized");
+        error.put("message", ex.getMessage());
+
+        return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidationError(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors()
+          .forEach(err -> errors.put(err.getField(), err.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(errors);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleGeneric(Exception ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Unexpected error: " + ex.getMessage()));
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\exception\InsufficientBalanceException.java =====
+
+package com.cryptowallet.exception;
+
+public class InsufficientBalanceException extends RuntimeException {
+    public InsufficientBalanceException(String message) {
+        super(message);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\exception\UserAlreadyExistsException.java =====
+
+package com.cryptowallet.exception;
+
+public class UserAlreadyExistsException extends RuntimeException{
+    public UserAlreadyExistsException(String message) {
+        super(message);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\exception\WalletNotFoundException.java =====
+
+package com.cryptowallet.exception;
+
+public class WalletNotFoundException extends RuntimeException {
+    public WalletNotFoundException(String message) {
+        super(message);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\mapper\TransactionMapper.java =====
+
+package com.cryptowallet.mapper;
+
+import com.cryptowallet.dto.TransactionDTO;
+import com.cryptowallet.model.TransactionDocument;
+
+public class TransactionMapper {
+    public static TransactionDTO toDTO(TransactionDocument tx) {
+        return new TransactionDTO(
+            tx.getId(),
+            tx.getSenderAddress(),
+            tx.getReceiverAddress(),
+            tx.getAmount(),
+            tx.getTimestamp(),
+            tx.getSignature()
+        );
+    }
+
+    public static TransactionDocument toDocument(TransactionDTO dto) {
+        TransactionDocument tx = new TransactionDocument();
+        tx.setId(dto.transactionId());
+        tx.setSenderAddress(dto.senderAddress());
+        tx.setReceiverAddress(dto.receiverAddress());
+        tx.setAmount(dto.amount());
+        tx.setTimestamp(dto.timestamp());
+        tx.setSignature(dto.signature());
+        return tx;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\mapper\UserMapper.java =====
+
+package com.cryptowallet.mapper;
+
+import com.cryptowallet.dto.UserDTO;
+import com.cryptowallet.model.UserDocument;
+
+public class UserMapper {
+    public static UserDTO toDTO(UserDocument doc) {
+        return new UserDTO(doc.getId(), doc.getUserName());
+    }
+
+    public static UserDocument fromDTO(UserDTO dto) {
+        UserDocument user = new UserDocument();
+        user.setId(dto.id());
+        user.setUserName(dto.userName());
+        return user;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\mapper\WalletMapper.java =====
+
+package com.cryptowallet.mapper;
+
+import com.cryptowallet.dto.WalletDTO;
+import com.cryptowallet.dto.CreateWalletRequestDTO;
+import com.cryptowallet.model.WalletDocument;
+
+public class WalletMapper {
+
+    public static WalletDTO toDTO(WalletDocument doc) {
+        return new WalletDTO(
+                doc.getId(),
+                doc.getUserId(),
+                doc.getPublicKey(),
+                doc.getBalance()
+        );
+    }
+
+    public static WalletDocument fromCreateDto(CreateWalletRequestDTO dto, String publicKey, String encryptedPrivateKey) {
+        WalletDocument doc = new WalletDocument();
+        doc.setUserId(dto.userId());
+        doc.setPublicKey(publicKey);
+        doc.setEncryptedPrivateKey(encryptedPrivateKey);
+        doc.setBalance(0.0);
+        return doc;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\model\TransactionDocument.java =====
+
+package com.cryptowallet.model;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.util.Date;
+
+@Document("transactions")
+public class TransactionDocument {
+    @Id
+    private String id;
+    private String senderAddress;
+    private String receiverAddress;
+    private double amount;
+    private Date timestamp;
+    private String signature;
+
+    public TransactionDocument() {}
+
+    public TransactionDocument( String senderAddress, String receiverAddress, double amount, Date timestamp, String signature) {
+        this.senderAddress = senderAddress;
+        this.receiverAddress = receiverAddress;
+        this.amount = amount;
+        this.timestamp = timestamp;
+        this.signature = signature;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getSenderAddress() {
+        return senderAddress;
+    }
+
+    public String getReceiverAddress() {
+        return receiverAddress;
+    }
+
+    public double getAmount() {
+        return amount;
+    }
+
+    public Date getTimestamp() {
+        return timestamp;
+    }
+
+    public String getSignature() {
+        return signature;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public void setReceiverAddress(String receiverAddress) {
+        this.receiverAddress = receiverAddress;
+    }
+
+    public void setSenderAddress(String senderAddress) {
+        this.senderAddress = senderAddress;
+    }
+
+    public void setAmount(double amount) {
+        this.amount = amount;
+    }
+
+    public void setTimestamp(Date timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public void setSignature(String signature) {
+        this.signature = signature;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\model\UserDocument.java =====
+
+package com.cryptowallet.model;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Document(collection = "users")
+public class UserDocument {
+
+    @Id
+    private String id;
+    private String userName;
+    private String password;
+
+    public UserDocument() {}
+
+    public UserDocument(String userName, String password) {
+        this.userName = userName;
+        this.password = password;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getUserName() {
+        return userName;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public void setUserName(String username) {
+        this.userName = userName;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\model\WalletDocument.java =====
+
+package com.cryptowallet.model;
+
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Document(collection = "wallets")
+public class WalletDocument {
+    @Id
+    private String id;
+    private String userId;
+    private String publicKey;
+    private String encryptedPrivateKey;
+    private double balance;
+
+    public WalletDocument() {}
+
+    public WalletDocument(String userId, String publicKey, String encryptedPrivateKey, double balance) {
+        this.userId = userId;
+        this.publicKey = publicKey;
+        this.encryptedPrivateKey = encryptedPrivateKey;
+        this.balance = balance;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public String getEncryptedPrivateKey() {
+        return encryptedPrivateKey;
+    }
+
+    public double getBalance() {
+        return balance;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
+    }
+
+    public void setEncryptedPrivateKey(String encryptedPrivateKey) {
+        this.encryptedPrivateKey = encryptedPrivateKey;
+    }
+
+    public void setBalance(double balance) {
+        this.balance = balance;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\repository\TransactionRepository.java =====
+
+package com.cryptowallet.repository;
+
+import com.cryptowallet.model.TransactionDocument;
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+import java.util.List;
+
+public interface TransactionRepository extends MongoRepository<TransactionDocument, String> {
+    List<TransactionDocument> findBySenderAddress(String senderAddress);
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\repository\UserRepository.java =====
+
+package com.cryptowallet.repository;
+
+import com.cryptowallet.model.UserDocument;
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+import java.util.Optional;
+
+public interface UserRepository extends MongoRepository<UserDocument, String> {
+    boolean existsByUserName(String userName);
+    Optional<UserDocument> findByUserName(String userName);
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\repository\WalletRepository.java =====
+
+package com.cryptowallet.repository;
+
+import com.cryptowallet.model.WalletDocument;
+import org.springframework.data.mongodb.repository.MongoRepository;
+
+import java.util.List;
+
+public interface WalletRepository extends MongoRepository<WalletDocument, String> {
+    List<WalletDocument> findByUserId(String userId);
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\service\JwtService.java =====
+
+package com.cryptowallet.service;
+
+import com.cryptowallet.dto.LoginRequestDTO;
+import com.cryptowallet.exception.AuthenticationFailedException;
+import com.cryptowallet.model.UserDocument;
+import com.cryptowallet.repository.UserRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+
+@Service
+@Slf4j
+public class JwtService {
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    private final SecretKey signingKey;
+    private final long expirationMs = 86400000; //24hrs
+
+
+    public JwtService(UserRepository userRepository,
+                      PasswordEncoder passwordEncoder,
+                      @Value("${JWT_SECRET_KEY}") String jwtSecret) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String authenticateAndGenerateToken(LoginRequestDTO request) {
+        UserDocument user = userRepository.findByUserName(request.userName())
+                .orElseThrow(() -> {
+                    log.warn("Login failed: user '{}' not found", request.userName());
+                    return new AuthenticationFailedException("Invalid credentials");
+                });
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            log.warn("Login failed: invalid password for user '{}'", request.userName());
+            throw new AuthenticationFailedException("Invalid credentials");
+        }
+
+        log.info("Generating JWT for user: {}", request.userName());
+
+        return Jwts.builder()
+                .setSubject(user.getId())
+                .claim("username", user.getUserName())
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
+                .signWith(signingKey, SignatureAlgorithm.HS256)
+                .compact();
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\service\TransactionService.java =====
+
+package com.cryptowallet.service;
+
+import com.cryptowallet.dto.SendTransactionRequestDTO;
+import com.cryptowallet.dto.TransactionDTO;
+import com.cryptowallet.exception.WalletNotFoundException;
+import com.cryptowallet.mapper.TransactionMapper;
+import com.cryptowallet.model.TransactionDocument;
+import com.cryptowallet.model.WalletDocument;
+import com.cryptowallet.repository.TransactionRepository;
+import com.cryptowallet.repository.WalletRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Service;
+
+import java.util.Date;
+import java.util.Optional;
+
+@Service
+@Slf4j
+public class TransactionService {
+
+    private final WalletRepository walletRepository;
+    private final TransactionRepository transactionRepository;
+    private final MongoTemplate mongoTemplate;
+
+    public TransactionService(WalletRepository walletRepository, TransactionRepository transactionRepository, MongoTemplate mongoTemplate) {
+        this.walletRepository = walletRepository;
+        this.transactionRepository = transactionRepository;
+        this.mongoTemplate = mongoTemplate;
+    }
+
+    public TransactionDTO processTransaction(SendTransactionRequestDTO dto) {
+        log.info("Initiating transaction from {} to {} amount={}", dto.senderWalletId(), dto.receiverAddress(), dto.amount());
+
+        // Check for idempotent request
+        Optional<TransactionDocument> existing = transactionRepository.findBySenderAddress(dto.senderWalletId())
+                .stream()
+                .filter(tx -> tx.getSignature().equals(dto.generateIdempotencyKey()))
+                .findFirst();
+
+        if(existing.isPresent()) {
+            log.warn("Duplicate transaction detected: {}", dto.generateIdempotencyKey());
+            return TransactionMapper.toDTO(existing.get());
+        }
+
+        // Atomic balance decrement on sender
+        /*
+        Query senderQuery = new Query(Criteria.where("_id").is(dto.senderWalletId()).and("balance").gte(dto.amount()));
+        Update senderUpdate = new Update().inc("balance", -dto.amount());
+        WalletDocument updatedSender = mongoTemplate.findAndModify(
+                senderQuery,
+                senderUpdate,
+                FindAndModifyOptions.options().returnNew(true),
+                WalletDocument.class
+        );
+
+        if(updatedSender == null) {
+            log.error("Sender not found or insufficient balance");
+            throw new WalletNotFoundException("Sender not found or insufficient balance");
+        }
+         */
+
+        WalletDocument updatedSender = updateWalletBalance(
+                "_id", dto.senderWalletId(), -dto.amount(),
+                "Sender not found or insufficient balance"
+        );
+
+
+        // Atomic balance increment on receiver
+        /*
+        Query receiverQuery = new Query(Criteria.where("publicKey").is(dto.receiverAddress()));
+        Update receiverUpdate = new Update().inc("balance", dto.amount());
+        WalletDocument updatedReceiver = mongoTemplate.findAndModify(
+                receiverQuery,
+                receiverUpdate,
+                FindAndModifyOptions.options().returnNew(true),
+                WalletDocument.class
+        );
+
+        if (updatedReceiver == null) {
+            log.error("Receiver wallet not found for address: {}", dto.receiverAddress());
+            throw new WalletNotFoundException("Receiver not found");
+        }
+         */
+
+        WalletDocument updatedReceiver = updateWalletBalance(
+                "publicKey", dto.receiverAddress(), dto.amount(),
+                "Receiver not found"
+        );
+
+
+
+        TransactionDocument transaction = new TransactionDocument(
+            updatedSender.getPublicKey(),
+            updatedReceiver.getPublicKey(),
+            dto.amount(),
+            new Date(),
+            dto.generateIdempotencyKey()
+        );
+
+        TransactionDocument saved = transactionRepository.save(transaction);
+        log.info("Transaction completed and saved: {}", saved.getId());
+
+        return TransactionMapper.toDTO(saved);
+    }
+
+    private WalletDocument updateWalletBalance(String field, Object value, double delta, String notFoundMessage) {
+        Query query = new Query(Criteria.where(field).is(value));
+        if (delta < 0) {
+            query.addCriteria(Criteria.where("balance").gte(Math.abs(delta))); // ensure sufficient balance
+        }
+
+        Update update = new Update().inc("balance", delta);
+
+        WalletDocument updated = mongoTemplate.findAndModify(
+                query,
+                update,
+                FindAndModifyOptions.options().returnNew(true),
+                WalletDocument.class
+        );
+
+        if (updated == null) {
+            log.error(notFoundMessage);
+            throw new WalletNotFoundException(notFoundMessage);
+        }
+
+        return updated;
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\service\UserService.java =====
+
+package com.cryptowallet.service;
+
+import com.cryptowallet.dto.RegisterUserRequestDTO;
+import com.cryptowallet.dto.UserDTO;
+import com.cryptowallet.exception.UserAlreadyExistsException;
+import com.cryptowallet.mapper.UserMapper;
+import com.cryptowallet.model.UserDocument;
+import com.cryptowallet.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+@Slf4j
+public class UserService {
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public UserService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    public UserDTO registerUser(RegisterUserRequestDTO dto) {
+        log.info("Attempting to create user: {}", dto.userName());
+
+        if (userRepository.existsByUserName((dto.userName()))) {
+            log.warn("UserName already exists: {}", dto.userName());
+            throw new UserAlreadyExistsException("UserName already exists");
+        }
+
+        String hashedPassword = passwordEncoder.encode(dto.password());
+        UserDocument user = new UserDocument(dto.userName(), hashedPassword);
+        UserDocument saved = userRepository.save(user);
+        log.info("User registered with ID: {}", saved.getId());
+
+        return UserMapper.toDTO(saved);
+    }
+}
+
+
+// ===== FILE: C:\Users\Nevo\IdeaProjects\Cryptocurrency Wallet\src\main\java\com\cryptowallet\service\WalletService.java =====
+
+package com.cryptowallet.service;
+
+import com.cryptowallet.crypto.CryptoFacade;
+import com.cryptowallet.crypto.EncodedKeyPair;
+import com.cryptowallet.dto.WalletDTO;
+import com.cryptowallet.dto.CreateWalletRequestDTO;
+import com.cryptowallet.exception.WalletNotFoundException;
+import com.cryptowallet.mapper.WalletMapper;
+import com.cryptowallet.model.WalletDocument;
+import com.cryptowallet.repository.WalletRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+@Service
+@Slf4j
+public class WalletService {
+    private final WalletRepository walletRepository;
+    private final CryptoFacade cryptoFacade;
+
+
+    public WalletService(WalletRepository walletRepository, CryptoFacade cryptoFacade) {
+        this.walletRepository = walletRepository;
+        this.cryptoFacade = cryptoFacade;
+    }
+
+    public WalletDTO createWallet(CreateWalletRequestDTO dto) {
+        log.info("Generating key pair for userId={}", dto.userId());
+        EncodedKeyPair keyPair = cryptoFacade.generateKeyPair();
+        String encryptedPrivateKey = cryptoFacade.encryptPrivateKey(keyPair.getPrivate());
+
+        WalletDocument wallet = WalletMapper.fromCreateDto(
+                dto,
+                keyPair.getPublic(),
+                encryptedPrivateKey
+        );
+
+        WalletDocument saved = walletRepository.save(wallet);
+
+        log.info("Wallet created with ID={} for userId={}", saved.getId(), saved.getUserId());
+
+        return WalletMapper.toDTO(saved);
+    }
+
+    public WalletDTO getWalletById(String walletId) {
+        WalletDocument wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> new WalletNotFoundException("Wallet is not found with ID: " + walletId));
+        return WalletMapper.toDTO(wallet);
+    }
+}

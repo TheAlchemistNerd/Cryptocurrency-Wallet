@@ -1,7 +1,5 @@
-package com.cryptowallet;
+package com.cryptowallet.domain;
 
-import com.cryptowallet.domain.User;
-import com.cryptowallet.domain.Wallet;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

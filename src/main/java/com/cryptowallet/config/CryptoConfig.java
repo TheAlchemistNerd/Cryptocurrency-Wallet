@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class CryptoConfig {
 
-    @Value("${crypto.aes.secret}")
+    @Value("${CRYPTO_AES_SECRET}")
     private String aesSecret;
 
     // 🔐 Strategy Beans

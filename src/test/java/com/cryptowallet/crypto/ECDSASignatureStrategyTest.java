@@ -1,7 +1,5 @@
-package com.cryptowallet;
+package com.cryptowallet.crypto;
 
-import com.cryptowallet.crypto.ECDSASignatureStrategy;
-import com.cryptowallet.crypto.EncodedKeyPair;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

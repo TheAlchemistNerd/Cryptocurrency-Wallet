@@ -1,9 +1,8 @@
-package com.cryptowallet;
+package com.cryptowallet.domain;
 
 import com.cryptowallet.crypto.CryptoFacade;
 import com.cryptowallet.crypto.EncodedKeyPair;
-import com.cryptowallet.domain.WalletFactory;
-import com.cryptowallet.domain.Wallet;
+
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

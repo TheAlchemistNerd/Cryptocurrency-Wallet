@@ -28,5 +28,4 @@ public class CryptoFacade {
     public boolean verifySignature(String data, String signature, String publicKey) {
         return signatureService.verifySignature(data, signature, publicKey);
     }
-
 }
