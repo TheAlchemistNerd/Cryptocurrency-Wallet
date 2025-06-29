@@ -10,17 +10,12 @@ public class WalletMapper {
         return new WalletDTO(
                 doc.getId(),
                 doc.getUserId(),
-                doc.getPublicKey(),
-                doc.getBalance()
+                doc.getAddress(),
+                doc.getBalances()
         );
     }
 
-    public static WalletDocument fromCreateDto(CreateWalletRequestDTO dto, String publicKey, String encryptedPrivateKey) {
-        WalletDocument doc = new WalletDocument();
-        doc.setUserId(dto.userId());
-        doc.setPublicKey(publicKey);
-        doc.setEncryptedPrivateKey(encryptedPrivateKey);
-        doc.setBalance(0.0);
-        return doc;
+    public static WalletDocument fromCreateDto(CreateWalletRequestDTO dto, String address, String encryptedPrivateKey) {
+        return new WalletDocument(dto.userId(), address, encryptedPrivateKey);
     }
 }

@@ -1,12 +1,14 @@
 package com.cryptowallet.dto;
 
-import java.util.Date;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 public record TransactionDTO(
-    String transactionId,
-    String senderAddress,
-    String receiverAddress,
-    double amount,
-    Date timestamp,
-    String signature
+    String id,
+    String fromAddress,
+    String toAddress,
+    BigDecimal amount,
+    String currency,
+    String signature,
+    Instant timestamp
 ) {}

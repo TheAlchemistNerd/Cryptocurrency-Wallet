@@ -1,47 +1,58 @@
 package com.cryptowallet.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.util.Date;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 @Document("transactions")
 public class TransactionDocument {
     @Id
     private String id;
-    private String senderAddress;
-    private String receiverAddress;
-    private double amount;
-    private Date timestamp;
+
+    @Indexed
+    private String fromAddress;
+    private String toAddress;
+    private BigDecimal amount;
+    private String currency;
+    private Instant timestamp;
+    @Indexed(unique = true) // The signature should be unique to prevent replay attacks
     private String signature;
 
     public TransactionDocument() {}
 
-    public TransactionDocument( String senderAddress, String receiverAddress, double amount, Date timestamp, String signature) {
-        this.senderAddress = senderAddress;
-        this.receiverAddress = receiverAddress;
+    public TransactionDocument( String fromAddress, String toAddress, BigDecimal amount, String currency, String signature) {
+        this.fromAddress = fromAddress;
+        this.toAddress = toAddress;
         this.amount = amount;
-        this.timestamp = timestamp;
+        this.currency = currency;
         this.signature = signature;
+        this.timestamp = Instant.now();
     }
 
     public String getId() {
         return id;
     }
 
-    public String getSenderAddress() {
-        return senderAddress;
+    public String getFromAddress() {
+        return fromAddress;
     }
 
-    public String getReceiverAddress() {
-        return receiverAddress;
+    public String getToAddress() {
+        return toAddress;
     }
 
-    public double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public Date getTimestamp() {
+    public String getCurrency() {
+        return currency;
+    }
+
+    public Instant getTimestamp() {
         return timestamp;
     }
 
@@ -53,20 +64,20 @@ public class TransactionDocument {
         this.id = id;
     }
 
-    public void setReceiverAddress(String receiverAddress) {
-        this.receiverAddress = receiverAddress;
+    public void setToAddress(String toAddress) {
+        this.toAddress = toAddress;
     }
 
-    public void setSenderAddress(String senderAddress) {
-        this.senderAddress = senderAddress;
+    public void setFromAddress(String fromAddress) {
+        this.fromAddress = fromAddress;
     }
 
-    public void setAmount(double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 
-    public void setTimestamp(Date timestamp) {
-        this.timestamp = timestamp;
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public void setSignature(String signature) {

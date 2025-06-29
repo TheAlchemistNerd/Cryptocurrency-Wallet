@@ -1,6 +1,7 @@
 package com.cryptowallet.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 @Document(collection = "users")
@@ -8,13 +9,18 @@ public class UserDocument {
 
     @Id
     private String id;
+    @Indexed(unique = true)
     private String userName;
+
+    @Indexed(unique = true)
+    private String email;
     private String password;
 
     public UserDocument() {}
 
-    public UserDocument(String userName, String password) {
+    public UserDocument(String userName, String email, String password) {
         this.userName = userName;
+        this.email = email;
         this.password = password;
     }
 
@@ -24,6 +30,10 @@ public class UserDocument {
 
     public String getUserName() {
         return userName;
+    }
+
+    public String getEmail() {
+        return email;
     }
 
     public String getPassword() {
@@ -36,6 +46,10 @@ public class UserDocument {
 
     public void setUserName(String username) {
         this.userName = userName;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public void setPassword(String password) {

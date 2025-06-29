@@ -3,13 +3,7 @@ package com.cryptowallet.crypto;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.Security;
-import java.security.Signature;
+import java.security.*;
 import java.security.spec.ECGenParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -30,9 +24,9 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
     @Override
     public EncodedKeyPair generateKeyPair() {
         try {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance(CURVE, "BC");
+            KeyPairGenerator generator = KeyPairGenerator.getInstance(CURVE, PROVIDER);
             ECGenParameterSpec ecSpec = new ECGenParameterSpec(CURVE_SPEC); // Named curve
-            generator.initialize(ecSpec);
+            generator.initialize(ecSpec, new SecureRandom());
             KeyPair keyPair = generator.generateKeyPair();
 
             String publicKey = Base64.getEncoder().encodeToString(
@@ -54,10 +48,10 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
         try {
             byte[] privateBytes = Base64.getDecoder().decode(base64PrivateKey);
             PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(privateBytes);
-            KeyFactory factory = KeyFactory.getInstance(CURVE, "BC");
+            KeyFactory factory = KeyFactory.getInstance(CURVE, PROVIDER);
             PrivateKey privateKey = factory.generatePrivate(keySpec);
 
-            Signature signature = Signature.getInstance(ALGO, "BC");
+            Signature signature = Signature.getInstance(ALGO, PROVIDER);
             signature.initSign(privateKey);
             signature.update(data.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(signature.sign());
@@ -71,10 +65,10 @@ public class ECDSASignatureStrategy implements SignatureStrategy {
         try {
             byte[] publicBytes = Base64.getDecoder().decode(base64PublicKey);
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicBytes);
-            KeyFactory factory = KeyFactory.getInstance(CURVE, "BC");
+            KeyFactory factory = KeyFactory.getInstance(CURVE, PROVIDER);
             PublicKey publicKey = factory.generatePublic(keySpec);
 
-            Signature signature = Signature.getInstance(ALGO, "BC");
+            Signature signature = Signature.getInstance(ALGO, PROVIDER);
             signature.initVerify(publicKey);
             byte[] sigBytes = Base64.getDecoder().decode(signatureStr);
             signature.update(data.getBytes(StandardCharsets.UTF_8));

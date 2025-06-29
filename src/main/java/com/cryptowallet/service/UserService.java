@@ -30,8 +30,13 @@ public class UserService {
             throw new UserAlreadyExistsException("UserName already exists");
         }
 
+        if (userRepository.existsByEmail(dto.email())) {
+            log.warn("Email '{}' is already registered.", dto.email());
+            throw new UserAlreadyExistsException("Email is already registered");
+        }
+
         String hashedPassword = passwordEncoder.encode(dto.password());
-        UserDocument user = new UserDocument(dto.userName(), hashedPassword);
+        UserDocument user = new UserDocument(dto.userName(), dto.email(), hashedPassword);
         UserDocument saved = userRepository.save(user);
         log.info("User registered with ID: {}", saved.getId());
 

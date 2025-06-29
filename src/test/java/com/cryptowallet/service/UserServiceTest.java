@@ -5,47 +5,52 @@ import com.cryptowallet.dto.UserDTO;
 import com.cryptowallet.exception.UserAlreadyExistsException;
 import com.cryptowallet.model.UserDocument;
 import com.cryptowallet.repository.UserRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
+@ExtendWith(MockitoExtension.class)
 public class UserServiceTest {
 
+    @Mock
     private UserRepository userRepository;
+    @Mock
     private PasswordEncoder passwordEncoder;
+    @InjectMocks
     private UserService userService;
 
-    @BeforeEach
-    void setUp() {
-        userRepository = mock(UserRepository.class);
-        passwordEncoder = mock(PasswordEncoder.class);
-        userService = new UserService(userRepository, passwordEncoder);
-    }
-
     @Test
-    void testRegisterUserSuccess() {
-        RegisterUserRequestDTO dto = new RegisterUserRequestDTO("john", "1234");
+    void registerUser_shouldSucceed() {
+        RegisterUserRequestDTO dto = new RegisterUserRequestDTO("john.doe", "john.doe@example.com", "password123");
+        UserDocument userDoc = new UserDocument("john.doe", "john.doe@example.com", "hashed_password");
+        userDoc.setId("user-id-1");
 
-        when(userRepository.existsByUserName("john")).thenReturn(false);
-        when(passwordEncoder.encode("1234")).thenReturn("hashed123");
-        when(userRepository.save(any(UserDocument.class)))
-                .thenAnswer(i -> i.getArguments()[0]);
+        when(userRepository.existsByUserName("john.doe")).thenReturn(false);
+        when(userRepository.existsByEmail("john.doe@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("password123")).thenReturn("hashed_password");
+        when(userRepository.save(any(UserDocument.class))).thenReturn(userDoc);
 
         UserDTO result = userService.registerUser(dto);
 
-        assertEquals("john", result.userName());
+        assertThat(result.userName()).isEqualTo("john.doe");
+        assertThat(result.email()).isEqualTo("john.doe@example.com");
+        assertThat(result.id()).isEqualTo("user-id-1");
     }
 
     @Test
-    void testRegisterUserFailsIfExists() {
-        RegisterUserRequestDTO dto = new RegisterUserRequestDTO("john", "1234");
-        when(userRepository.existsByUserName("john")).thenReturn(true);
+    void registerUser_shouldFailIfUsernameExists() {
+        RegisterUserRequestDTO dto = new RegisterUserRequestDTO("john.doe", "john.doe@example.com", "password123");
+        when(userRepository.existsByUserName("john.doe")).thenReturn(true);
 
-        assertThrows(UserAlreadyExistsException.class, () ->
-                userService.registerUser(dto));
+        assertThatThrownBy(() -> userService.registerUser(dto))
+                .isInstanceOf(UserAlreadyExistsException.class)
+                .hasMessage("UserName already exists");
     }
 }
-

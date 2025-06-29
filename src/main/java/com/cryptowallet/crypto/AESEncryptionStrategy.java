@@ -11,14 +11,15 @@ import java.util.Base64;
 public class AESEncryptionStrategy implements EncryptionStrategy {
 
     private static final String ALGO = "AES/GCM/NoPadding";
-    private static final int IV_LENGTH = 12;
-    private static final int TAG_LENGTH = 128;
+    private static final int IV_LENGTH = 12; // 96 bits is recommended for GCM
+    private static final int TAG_LENGTH = 128;  // 128 bits for the authentication tag
 
     private final SecretKey key;
 
     public AESEncryptionStrategy(String secret) {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        if (keyBytes.length != 32) throw new IllegalArgumentException("AES key must be 32 bytes (256 bits)");
+        // Decode the Base64 secret string to get the original key bytes
+        byte[] keyBytes = Base64.getDecoder().decode(secret);
+        if (keyBytes.length != 32) throw new IllegalArgumentException("AES key must be exactly 32 bytes (256 bits)");
         this.key = new SecretKeySpec(keyBytes, "AES");
     }
 

@@ -23,27 +23,29 @@ public class JwtService {
     private final PasswordEncoder passwordEncoder;
 
     private final SecretKey signingKey;
-    private final long expirationMs = 86400000; //24hrs
+    private final long expirationMs;
 
 
     public JwtService(UserRepository userRepository,
                       PasswordEncoder passwordEncoder,
-                      @Value("${JWT_SECRET_KEY}") String jwtSecret) {
+                      @Value("${JWT_SECRET_KEY}") String jwtSecret,
+                      @Value("${JWT_EXPIRATION}") long expirationMs) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        this.expirationMs = expirationMs;
     }
 
     public String authenticateAndGenerateToken(LoginRequestDTO request) {
         UserDocument user = userRepository.findByUserName(request.userName())
                 .orElseThrow(() -> {
                     log.warn("Login failed: user '{}' not found", request.userName());
-                    return new AuthenticationFailedException("Invalid credentials");
+                    return new AuthenticationFailedException("Invalid username or password");
                 });
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             log.warn("Login failed: invalid password for user '{}'", request.userName());
-            throw new AuthenticationFailedException("Invalid credentials");
+            throw new AuthenticationFailedException("Invalid username or password");
         }
 
         log.info("Generating JWT for user: {}", request.userName());
@@ -51,6 +53,7 @@ public class JwtService {
         return Jwts.builder()
                 .setSubject(user.getId())
                 .claim("username", user.getUserName())
+                .claim("email", user.getEmail())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
                 .signWith(signingKey, SignatureAlgorithm.HS256)

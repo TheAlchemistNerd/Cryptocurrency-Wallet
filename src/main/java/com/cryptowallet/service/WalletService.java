@@ -36,7 +36,7 @@ public class WalletService {
 
         WalletDocument saved = walletRepository.save(wallet);
 
-        log.info("Wallet created with ID={} for userId={}", saved.getId(), saved.getUserId());
+        log.info("Wallet created with ID={} and address={} for userId={}", saved.getId(), saved.getAddress(), saved.getUserId());
 
         return WalletMapper.toDTO(saved);
     }

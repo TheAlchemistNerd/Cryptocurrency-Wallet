@@ -1,13 +1,17 @@
 package com.cryptowallet.service;
 
+import com.cryptowallet.crypto.CryptoFacade;
 import com.cryptowallet.dto.SendTransactionRequestDTO;
 import com.cryptowallet.dto.TransactionDTO;
+import com.cryptowallet.exception.InsufficientBalanceException;
+import com.cryptowallet.exception.InvalidTransactionException;
 import com.cryptowallet.exception.WalletNotFoundException;
 import com.cryptowallet.mapper.TransactionMapper;
 import com.cryptowallet.model.TransactionDocument;
 import com.cryptowallet.model.WalletDocument;
 import com.cryptowallet.repository.TransactionRepository;
 import com.cryptowallet.repository.WalletRepository;
+import com.mongodb.DuplicateKeyException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -16,118 +20,104 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.Date;
-import java.util.Optional;
-
 @Service
 @Slf4j
 public class TransactionService {
 
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
+
+    private final CryptoFacade cryptoFacade;
     private final MongoTemplate mongoTemplate;
 
-    public TransactionService(WalletRepository walletRepository, TransactionRepository transactionRepository, MongoTemplate mongoTemplate) {
+    public TransactionService(WalletRepository walletRepository,
+                              TransactionRepository transactionRepository,
+                              CryptoFacade cryptoFacade,
+                              MongoTemplate mongoTemplate) {
         this.walletRepository = walletRepository;
         this.transactionRepository = transactionRepository;
+        this.cryptoFacade = cryptoFacade;
         this.mongoTemplate = mongoTemplate;
     }
 
     public TransactionDTO processTransaction(SendTransactionRequestDTO dto) {
-        log.info("Initiating transaction from {} to {} amount={}", dto.senderWalletId(), dto.receiverAddress(), dto.amount());
+        log.info("Processing transaction from {} to {} amount={} {}", dto.fromAddress(), dto.toAddress(), dto.amount(), dto.currency());
 
-        // Check for idempotent request
-        Optional<TransactionDocument> existing = transactionRepository.findBySenderAddress(dto.senderWalletId())
-                .stream()
-                .filter(tx -> tx.getSignature().equals(dto.generateIdempotencyKey()))
-                .findFirst();
-
-        if(existing.isPresent()) {
-            log.warn("Duplicate transaction detected: {}", dto.generateIdempotencyKey());
-            return TransactionMapper.toDTO(existing.get());
+        // 1. Validate signature to authenticate the sender and ensure integrity
+        if(!cryptoFacade.verifySignature(dto.toSignableString(), dto.signature(), dto.fromAddress())) {
+            throw new InvalidTransactionException("Transaction signature is invalid.");
         }
 
-        // Atomic balance decrement on sender
-        /*
-        Query senderQuery = new Query(Criteria.where("_id").is(dto.senderWalletId()).and("balance").gte(dto.amount()));
-        Update senderUpdate = new Update().inc("balance", -dto.amount());
-        WalletDocument updatedSender = mongoTemplate.findAndModify(
-                senderQuery,
-                senderUpdate,
-                FindAndModifyOptions.options().returnNew(true),
-                WalletDocument.class
-        );
-
-        if(updatedSender == null) {
-            log.error("Sender not found or insufficient balance");
-            throw new WalletNotFoundException("Sender not found or insufficient balance");
+        // 2. Prevent replay attacks by checking if the signature has been used before.
+        // This is more robust than the old idempotency key.
+        if(transactionRepository.existsBySignature(dto.signature())) {
+            throw new InvalidTransactionException("Duplicate transaction: this signature has already been processed.");
         }
-         */
 
-        WalletDocument updatedSender = updateWalletBalance(
-                "_id", dto.senderWalletId(), -dto.amount(),
-                "Sender not found or insufficient balance"
-        );
+        // 3. Atomically update balances
+        updateSenderBalance(dto);
+        updateReceiverBalance(dto);
 
-
-        // Atomic balance increment on receiver
-        /*
-        Query receiverQuery = new Query(Criteria.where("publicKey").is(dto.receiverAddress()));
-        Update receiverUpdate = new Update().inc("balance", dto.amount());
-        WalletDocument updatedReceiver = mongoTemplate.findAndModify(
-                receiverQuery,
-                receiverUpdate,
-                FindAndModifyOptions.options().returnNew(true),
-                WalletDocument.class
-        );
-
-        if (updatedReceiver == null) {
-            log.error("Receiver wallet not found for address: {}", dto.receiverAddress());
-            throw new WalletNotFoundException("Receiver not found");
-        }
-         */
-
-        WalletDocument updatedReceiver = updateWalletBalance(
-                "publicKey", dto.receiverAddress(), dto.amount(),
-                "Receiver not found"
-        );
-
-
-
+        // 4. Record the transaction
         TransactionDocument transaction = new TransactionDocument(
-            updatedSender.getPublicKey(),
-            updatedReceiver.getPublicKey(),
-            dto.amount(),
-            new Date(),
-            dto.generateIdempotencyKey()
+                dto.fromAddress(),
+                dto.toAddress(),
+                dto.amount(),
+                dto.currency(),
+                dto.signature()
         );
 
-        TransactionDocument saved = transactionRepository.save(transaction);
-        log.info("Transaction completed and saved: {}", saved.getId());
-
-        return TransactionMapper.toDTO(saved);
+        try {
+            TransactionDocument saved = transactionRepository.save(transaction);
+            log.info("Transaction completed and saved with ID: {}", saved.getId());
+            return TransactionMapper.toDTO(saved);
+        } catch (DuplicateKeyException e) {
+            // This is a final safeguard against race conditions on the signature check.
+            log.error("Duplicate signature detected during save operation for transaction: {}", dto.signature());
+            throw new InvalidTransactionException("Duplicate transaction detected.");
+        }
     }
 
-    private WalletDocument updateWalletBalance(String field, Object value, double delta, String notFoundMessage) {
-        Query query = new Query(Criteria.where(field).is(value));
-        if (delta < 0) {
-            query.addCriteria(Criteria.where("balance").gte(Math.abs(delta))); // ensure sufficient balance
-        }
+    private void updateSenderBalance(SendTransactionRequestDTO dto) {
+        // Query to find the sender's wallet and ensure it has enough funds in the specified currency.
+        Query query = new Query(Criteria.where("address").is(dto.fromAddress())
+                .and("balances." + dto.currency()).gte(dto.amount()));
 
-        Update update = new Update().inc("balance", delta);
+        // Atomically decrement the balance for the specified currency.
+        Update update = new Update().inc("balances." + dto.currency(), dto.amount().negate());
 
         WalletDocument updated = mongoTemplate.findAndModify(
                 query,
                 update,
-                FindAndModifyOptions.options().returnNew(true),
+                new FindAndModifyOptions().returnNew(true),
                 WalletDocument.class
         );
 
         if (updated == null) {
-            log.error(notFoundMessage);
-            throw new WalletNotFoundException(notFoundMessage);
+            // If it fails, check if the wallet exists at all to give a better error message.
+            walletRepository.findByAddress(dto.fromAddress()).ifPresentOrElse(
+                    wallet -> { throw new InsufficientBalanceException("Insufficient funds in " + dto.currency() + " for wallet " + dto.fromAddress()); },
+                    () -> { throw new WalletNotFoundException("Sender wallet not found: " + dto.fromAddress()); }
+            );
         }
+    }
 
-        return updated;
+    private void updateReceiverBalance(SendTransactionRequestDTO dto) {
+        Query query = new Query(Criteria.where("address").is(dto.toAddress()));
+
+        // Atomically increment the balance for the specified currency.
+        // The 'upsert' option is not used here; receiver wallets must exist.
+        Update update = new Update().inc("balances." + dto.currency(), dto.amount());
+
+        WalletDocument updated = mongoTemplate.findAndModify(
+                query,
+                update,
+                new FindAndModifyOptions().returnNew(true),
+                WalletDocument.class
+        );
+
+        if(updated == null) {
+            throw new WalletNotFoundException("Receiver wallet not found: " + dto.toAddress());
+        }
     }
 }

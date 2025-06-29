@@ -1,24 +1,32 @@
 package com.cryptowallet.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Document(collection = "wallets")
 public class WalletDocument {
     @Id
     private String id;
     private String userId;
-    private String publicKey;
+
+    @Indexed(unique = true)
+    private String address; // public key serves as the address
     private String encryptedPrivateKey;
-    private double balance;
+    // Stores balances for different currencies, e.g., {"BTC": 1.5, "ETH": 10.2}
+    private Map<String, BigDecimal> balances = new ConcurrentHashMap<>();
 
     public WalletDocument() {}
 
-    public WalletDocument(String userId, String publicKey, String encryptedPrivateKey, double balance) {
+    public WalletDocument(String userId, String address, String encryptedPrivateKey) {
         this.userId = userId;
-        this.publicKey = publicKey;
+        this.address = address;
         this.encryptedPrivateKey = encryptedPrivateKey;
-        this.balance = balance;
+        this.balances.put("USD", new BigDecimal("1000.00")); // Starting "fiat" for new wallets
     }
 
     public String getId() {
@@ -29,16 +37,16 @@ public class WalletDocument {
         return userId;
     }
 
-    public String getPublicKey() {
-        return publicKey;
+    public String getAddress() {
+        return address;
     }
 
     public String getEncryptedPrivateKey() {
         return encryptedPrivateKey;
     }
 
-    public double getBalance() {
-        return balance;
+    public Map<String, BigDecimal> getBalances() {
+        return balances;
     }
 
     public void setId(String id) {
@@ -49,15 +57,15 @@ public class WalletDocument {
         this.userId = userId;
     }
 
-    public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public void setEncryptedPrivateKey(String encryptedPrivateKey) {
         this.encryptedPrivateKey = encryptedPrivateKey;
     }
 
-    public void setBalance(double balance) {
-        this.balance = balance;
+    public void setBalances(Map<String, BigDecimal> balances) {
+        this.balances = balances;
     }
 }
