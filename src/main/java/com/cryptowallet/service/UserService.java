@@ -2,26 +2,40 @@ package com.cryptowallet.service;
 
 import com.cryptowallet.dto.RegisterUserRequestDTO;
 import com.cryptowallet.dto.UserDTO;
+import com.cryptowallet.event.UserRegisteredEvent;
 import com.cryptowallet.exception.UserAlreadyExistsException;
+import com.cryptowallet.exception.UserNotFoundException;
 import com.cryptowallet.mapper.UserMapper;
 import com.cryptowallet.model.UserDocument;
 import com.cryptowallet.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
+/**
+ * Service for managing user-related operations, including registration.
+ */
 @Service
 @Slf4j
 public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     public UserService(UserRepository userRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
+
+    @Transactional
     public UserDTO registerUser(RegisterUserRequestDTO dto) {
         log.info("Attempting to create user: {}", dto.userName());
 
@@ -40,6 +54,11 @@ public class UserService {
         UserDocument saved = userRepository.save(user);
         log.info("User registered with ID: {}", saved.getId());
 
-        return UserMapper.toDTO(saved);
+        UserDTO userDTO = UserMapper.toDTO(saved);
+        // Publish the UserRegistered event
+        eventPublisher.publishEvent(new UserRegisteredEvent(this, userDTO));
+        log.info("Published UserRegisteredEvent for user ID: {}", saved.getId());
+
+        return userDTO;
     }
 }

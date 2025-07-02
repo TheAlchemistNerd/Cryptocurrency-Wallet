@@ -10,6 +10,10 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Global exception handler to provide consistent and informative error responses
+ * for various application-specific and common Spring exceptions.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -24,10 +28,19 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(UserAlreadyExistsException.class)
-    public ResponseEntity<String> handleUserExists(UserAlreadyExistsException ex) {
-        return ResponseEntity.status(409).body(ex.getMessage());
+    public ResponseEntity<Map<String, String>> handleUserExists(UserAlreadyExistsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleUserNotFound(UserNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidTransactionException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidTransaction(InvalidTransactionException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
+    }
 
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<Object> handleAuthenticationFailed(AuthenticationFailedException ex) {

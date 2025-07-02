@@ -17,10 +17,13 @@ public class WalletDocument {
     @Indexed(unique = true)
     private String address; // public key serves as the address
     private String encryptedPrivateKey;
+
     // Stores balances for different currencies, e.g., {"BTC": 1.5, "ETH": 10.2}
     private Map<String, BigDecimal> balances = new ConcurrentHashMap<>();
 
-    public WalletDocument() {}
+    public WalletDocument() {
+        this.balances.put("USD", new BigDecimal("1000.00"));
+    }
 
     public WalletDocument(String userId, String address, String encryptedPrivateKey) {
         this.userId = userId;
