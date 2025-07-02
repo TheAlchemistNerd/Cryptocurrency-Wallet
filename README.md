@@ -4,6 +4,32 @@ Welcome to the Cryptocurrency Wallet Backend project! This robust and secure Spr
 
 Built with security and scalability in mind, this backend leverages industry-standard cryptographic algorithms and follows best practices for authentication and authorization. It's designed to be stateless and compatible with distributed systems, providing a solid foundation for a performant and reliable wallet application.
 
+## 🔥 New in Latest Update
+
+> **feat: Implement Event-Driven Architecture & Transaction Chaining**
+
+This release introduces architectural improvements and blockchain-style enhancements:
+
+- **Event-Driven Architecture (EDA):**
+    - Introduced `UserRegisteredEvent`, `WalletCreatedEvent`, and `TransactionCreatedEvent`.
+    - `UserService` and `WalletService` publish events after successful actions.
+    - `AuditService` listens to events to handle audit logging, promoting modularity and real-time insights.
+
+- **Transaction Chaining & Merkle Tree:**
+    - Added `BlockChain` component with Merkle Root support.
+    - Transactions are batched (threshold: 8) into blocks, each chaining to the previous one.
+    - Ensures immutability, auditability, and data integrity.
+
+- **Enhanced Exception Handling:**
+    - Mapped custom exceptions with `@ResponseStatus` annotations.
+    - Expanded `GlobalExceptionHandler` for specific error responses.
+    - Added detailed logging for easier debugging.
+
+- **Service Enhancements:**
+    - Injected `ApplicationEventPublisher` and `BlockChain` into services.
+    - Added `@Transactional` for atomicity.
+    - Adjusted default balance handling in `WalletDocument`.
+
 ## Features
 
 This backend offers a rich set of features, designed to provide a secure and functional base for any cryptocurrency wallet:
@@ -447,36 +473,25 @@ Security is paramount in a cryptocurrency wallet. This project implements severa
 ## Project Structure
 
 ```
-.
-├── pom.xml                                   # Maven build file
-├── src
-│   ├── main
-│   │   ├── java
-│   │   │   └── com
-│   │   │       └── cryptowallet
-│   │   │           ├── CryptoWalletApplication.java    # Main Spring Boot application
-│   │   │           ├── config                          # Spring configurations (Security, Crypto)
-│   │   │           ├── controller                      # REST API endpoints (User, Wallet, Transaction)
-│   │   │           ├── crypto                          # Cryptographic strategy interfaces and implementations (AES, ECDSA)
-│   │   │           ├── dto                             # Data Transfer Objects for API requests/responses
-│   │   │           ├── exception                       # Custom exception classes
-│   │   │           ├── mapper                          # DTO <-> Document mapping utilities
-│   │   │           ├── model                           # MongoDB Document classes
-│   │   │           ├── repository                      # Spring Data MongoDB repositories
-│   │   │           ├── service                         # Business logic services (User, Wallet, Transaction, JWT)
-│   │   │           └── tool                            # Utility classes (e.g., KeyGenerator)
-│   │   └── resources
-│   │       ├── application.yml                         # Spring Boot application properties (profiles, MongoDB URI)
-│   │       └── application-test.yml                    # Properties for 'test' profile
-│   └── test
-│       └── java
-│           └── com
-│               └── cryptowallet
-│                   └── controller                      # Controller tests
-│                   └── service                         # Service tests
-│                   └── ...
-├── .env                                               # Environment variables for Docker Compose (sensitive keys)
-└── docker-compose.yml                                 # Docker Compose configuration for local dev environment
+├── src/main/java/com/cryptowallet
+│   ├── config/             # SecurityConfig, CryptoConfig
+│   ├── controller/         # REST endpoints
+│   ├── crypto/             # AES, ECDSA logic
+│   ├── dto/                # Request/response DTOs
+│   ├── event/              # Domain events
+│   ├── exception/          # Custom exceptions
+│   ├── mapper/             # DTO-entity mappers
+│   ├── merkle/             # Merkle tree classes
+│   ├── blockchain/         # Block & Blockchain logic
+│   ├── model/              # MongoDB documents
+│   ├── repository/         # MongoDB repositories
+│   ├── service/            # Business logic
+│   └── tool/               # Key generator
+├── src/test/               # Unit & integration tests
+├── .env                    # Environment variables
+├── docker-compose.yml      # Container orchestration
+├── pom.xml                 # Maven build file
+└── LICENSE.md              # MIT License
 ```
 
 ---
