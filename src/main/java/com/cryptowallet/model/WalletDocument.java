@@ -3,6 +3,8 @@ package com.cryptowallet.model;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -19,6 +21,7 @@ public class WalletDocument {
     private String encryptedPrivateKey;
 
     // Stores balances for different currencies, e.g., {"BTC": 1.5, "ETH": 10.2}
+    @Field(targetType = FieldType.DECIMAL128)
     private Map<String, BigDecimal> balances = new ConcurrentHashMap<>();
 
     public WalletDocument() {
