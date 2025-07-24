@@ -2,6 +2,7 @@ package com.cryptowallet.service;
 
 import com.cryptowallet.dto.RegisterUserRequestDTO;
 import com.cryptowallet.dto.UserDTO;
+import com.cryptowallet.domain.Role;
 import com.cryptowallet.event.UserRegisteredEvent;
 import com.cryptowallet.exception.UserAlreadyExistsException;
 import com.cryptowallet.exception.UserNotFoundException;
@@ -51,6 +52,7 @@ public class UserService {
 
         String hashedPassword = passwordEncoder.encode(dto.password());
         UserDocument user = new UserDocument(dto.userName(), dto.email(), hashedPassword);
+        user.getRoles().add(Role.ROLE_USER);
         UserDocument saved = userRepository.save(user);
         log.info("User registered with ID: {}", saved.getId());
 
@@ -60,5 +62,11 @@ public class UserService {
         log.info("Published UserRegisteredEvent for user ID: {}", saved.getId());
 
         return userDTO;
+    }
+
+    public UserDTO findUserById(String id) {
+        return userRepository.findById(id)
+                .map(UserMapper::toDTO)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + id));
     }
 }

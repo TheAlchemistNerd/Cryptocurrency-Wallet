@@ -4,6 +4,10 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.HashSet;
+import java.util.Set;
+import com.cryptowallet.domain.Role;
+
 @Document(collection = "users")
 public class UserDocument {
 
@@ -15,6 +19,8 @@ public class UserDocument {
     @Indexed(unique = true)
     private String email;
     private String password;
+
+    private Set<Role> roles = new HashSet<>();
 
     public UserDocument() {}
 
@@ -38,6 +44,14 @@ public class UserDocument {
 
     public String getPassword() {
         return password;
+    }
+
+    public Set<Role> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(Set<Role> roles) {
+        this.roles = roles;
     }
 
     public void setId(String id) {

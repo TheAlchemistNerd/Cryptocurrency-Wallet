@@ -22,14 +22,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.security.core.GrantedAuthority; // Import for GrantedAuthority
-import org.springframework.security.core.authority.SimpleGrantedAuthority; // Import for SimpleGrantedAuthority
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List; // Import for List
-import java.util.ArrayList; // Import for ArrayList
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @Slf4j
@@ -49,6 +49,7 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated() // All other requests must be authenticated
                 )
                 .csrf(csrf -> csrf.disable()) // Disable CSRF protection
@@ -98,10 +99,11 @@ public class SecurityConfig {
                     String userId = claims.getSubject();
                     String userName = claims.get("username", String.class); // Use 'username' as per your JwtServiceTest
 
-                    // --- MODIFICATION HERE: Add roles/authorities ---
-                    // You can fetch roles from claims if stored, or assign a default role
-                    List<GrantedAuthority> authorities = new ArrayList<>();
-                    authorities.add(new SimpleGrantedAuthority("ROLE_USER")); // Assign a default role
+                    @SuppressWarnings("unchecked")
+                    List<String> roles = claims.get("roles", List.class);
+                    List<GrantedAuthority> authorities = roles.stream()
+                            .map(SimpleGrantedAuthority::new)
+                            .collect(Collectors.toList());
 
                     // Create the authentication token with authorities
                     var auth = new UsernamePasswordAuthenticationToken(

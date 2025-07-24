@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -54,6 +55,7 @@ public class JwtService {
                 .setSubject(user.getId())
                 .claim("username", user.getUserName())
                 .claim("email", user.getEmail())
+                .claim("roles", user.getRoles().stream().map(Enum::name).collect(Collectors.toList()))
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
                 .signWith(signingKey, SignatureAlgorithm.HS256)
