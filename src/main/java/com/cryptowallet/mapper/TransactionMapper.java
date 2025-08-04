@@ -10,8 +10,10 @@ public class TransactionMapper {
             tx.getFromAddress(),
             tx.getToAddress(),
             tx.getAmount(),
-            tx.getCurrency(), tx.getSignature(),
-            tx.getTimestamp()
+            tx.getCurrency(),
+            tx.getSignature(),
+            tx.getTimestamp(),
+            tx.getStatus()
         );
     }
 }

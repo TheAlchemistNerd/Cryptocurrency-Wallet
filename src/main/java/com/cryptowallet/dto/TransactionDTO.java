@@ -1,5 +1,7 @@
 package com.cryptowallet.dto;
 
+import com.cryptowallet.domain.TransactionStatus;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -10,5 +12,6 @@ public record TransactionDTO(
     BigDecimal amount,
     String currency,
     String signature,
-    Instant timestamp
+    Instant timestamp,
+    TransactionStatus status
 ) {}

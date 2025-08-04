@@ -37,7 +37,7 @@ test-output/
 # Environment files
 # Ignore environment-specific secrets
 .env.prod
-.env.test
+.env
 
 # But keep the template (shared safely)
 !.env.template

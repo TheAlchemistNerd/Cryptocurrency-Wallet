@@ -1,5 +1,6 @@
 package com.cryptowallet.model;
 
+import com.cryptowallet.domain.TransactionStatus;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -20,6 +21,7 @@ public class TransactionDocument {
     private Instant timestamp;
     @Indexed(unique = true) // The signature should be unique to prevent replay attacks
     private String signature;
+    private TransactionStatus status;
 
     public TransactionDocument() {}
 
@@ -30,6 +32,7 @@ public class TransactionDocument {
         this.currency = currency;
         this.signature = signature;
         this.timestamp = Instant.now();
+        this.status = TransactionStatus.PENDING;
     }
 
     public String getId() {
@@ -60,6 +63,10 @@ public class TransactionDocument {
         return signature;
     }
 
+    public TransactionStatus getStatus() {
+        return status;
+    }
+
     public void setId(String id) {
         this.id = id;
     }
@@ -82,5 +89,9 @@ public class TransactionDocument {
 
     public void setSignature(String signature) {
         this.signature = signature;
+    }
+
+    public void setStatus(TransactionStatus status) {
+        this.status = status;
     }
 }
