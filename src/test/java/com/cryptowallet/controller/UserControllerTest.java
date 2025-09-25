@@ -38,7 +38,7 @@ public class UserControllerTest {
     @Test
     void shouldRegisterUser() throws Exception {
         RegisterUserRequestDTO request = new RegisterUserRequestDTO("john.doe", "john.doe@example.com", "password123");
-        UserDTO response = new UserDTO("user-id-123", "john.doe", "john.doe@example.com");
+        UserDTO response = new UserDTO("user-id-123", "john.doe", "john.doe@example.com", java.util.Set.of("ROLE_USER"));
 
         when(userService.registerUser(any(RegisterUserRequestDTO.class))).thenReturn(response);
 

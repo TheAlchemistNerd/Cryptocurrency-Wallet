@@ -48,7 +48,7 @@ public class TransactionControllerTest {
                 "addr1", "addr2", new BigDecimal("10.5"), "a-valid-signature", "BTC");
 
         TransactionDTO responseDto = new TransactionDTO(
-                "tx-id-1", "addr1", "addr2", new BigDecimal("10.5"), "BTC", "a-valid-signature", Instant.now());
+                "tx-id-1", "addr1", "addr2", new BigDecimal("10.5"), "BTC", "a-valid-signature", Instant.now(), com.cryptowallet.domain.TransactionStatus.PENDING);
 
         when(transactionService.processTransaction(any(SendTransactionRequestDTO.class))).thenReturn(responseDto);
 

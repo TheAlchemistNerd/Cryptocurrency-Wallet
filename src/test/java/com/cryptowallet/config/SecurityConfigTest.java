@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -57,6 +58,7 @@ public class SecurityConfigTest {
         String token = Jwts.builder()
                 .setSubject(userId)
                 .claim("userName", username)
+                .claim("roles", Collections.singletonList("ROLE_USER"))
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + 100000))
                 .signWith(secretKey, SignatureAlgorithm.HS256)
@@ -73,7 +75,7 @@ public class SecurityConfigTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isInstanceOf(org.springframework.security.core.userdetails.User.class);
-        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).isEqualTo(Collections.emptyList());
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).extracting("authority").containsExactly("ROLE_USER");
 
         verify(chain, times(1)).doFilter(request, response);
     }

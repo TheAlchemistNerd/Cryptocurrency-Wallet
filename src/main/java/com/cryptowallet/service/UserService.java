@@ -11,18 +11,25 @@ import com.cryptowallet.model.UserDocument;
 import com.cryptowallet.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing user-related operations, including registration.
+ * Also implements UserDetailsService to integrate with Spring Security.
  */
 @Service
 @Slf4j
-public class UserService {
+public class UserService implements UserDetailsService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
@@ -35,6 +42,26 @@ public class UserService {
         this.eventPublisher = eventPublisher;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        log.debug("Attempting to load user by username: {}", username);
+        return userRepository.findByUserName(username)
+                .map(userDocument -> {
+                    log.debug("Found user: {}", userDocument.getUserName());
+                    return new User(
+                            userDocument.getUserName(),
+                            userDocument.getPassword(),
+                            userDocument.getRoles().stream()
+                                    .map(role -> new SimpleGrantedAuthority(role.name()))
+                                    .collect(Collectors.toSet())
+                    );
+                })
+                .orElseThrow(() -> {
+                    log.warn("User not found with username: {}", username);
+                    return new UsernameNotFoundException("User not found with username: " + username);
+                });
+    }
 
     @Transactional
     public UserDTO registerUser(RegisterUserRequestDTO dto) {

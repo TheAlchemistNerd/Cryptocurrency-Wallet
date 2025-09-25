@@ -30,7 +30,7 @@ public class WalletFactoryTest {
         EncodedKeyPair mockKeyPair = new EncodedKeyPair(dummyPublicKey, "privateKeyBase64");
 
         when(cryptoFacade.generateKeyPair()).thenReturn(mockKeyPair);
-        when(cryptoFacade.encryptPrivateKey("privateKeyBase64")).thenReturn(dummyEncryptedPrivateKey);
+        when(cryptoFacade.encryptData("privateKeyBase64")).thenReturn(dummyEncryptedPrivateKey);
 
         Wallet wallet = walletFactory.createWallet("user123");
 
@@ -40,6 +40,6 @@ public class WalletFactoryTest {
         assertEquals(0.0, wallet.getBalance(), 0.001);
 
         verify(cryptoFacade).generateKeyPair();
-        verify(cryptoFacade).encryptPrivateKey("privateKeyBase64");
+        verify(cryptoFacade).encryptData("privateKeyBase64");
     }
 }

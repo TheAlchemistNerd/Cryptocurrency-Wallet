@@ -7,13 +7,8 @@ public class SignatureService {
         this.strategy = strategy;
     }
 
-
-    public EncodedKeyPair generateKeyPair() {
-        return strategy.generateKeyPair();
-    }
-
-    public String sign(String data, String privateKey) {
-        return strategy.sign(data, privateKey);
+    public String sign(String data, String keyAddressIdentifier) {
+        return strategy.sign(data, keyAddressIdentifier);
     }
 
     public boolean verifySignature(String data, String signature, String publicKey) {

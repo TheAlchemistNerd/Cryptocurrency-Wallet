@@ -3,7 +3,6 @@ package com.cryptowallet.dto;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 
@@ -14,7 +13,8 @@ public record SendTransactionRequestDTO (
     String toAddress,
     @NotNull @DecimalMin(value = "0.00000001", message = "Amount must be positive")
     BigDecimal amount,
-    @NotBlank(message = "Signature is required for the transaction") String signature,
+    // Signature is now optional. If absent or blank, the server will sign the transaction.
+    String signature,
     @NotBlank(message = "Currency must be specified") String currency
 ){
     /**

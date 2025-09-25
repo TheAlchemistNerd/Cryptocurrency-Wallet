@@ -2,7 +2,6 @@ package com.cryptowallet.service;
 
 import com.cryptowallet.blockchain.BlockChain;
 import com.cryptowallet.crypto.CryptoFacade;
-import com.cryptowallet.domain.TransactionStatus;
 import com.cryptowallet.dto.SendTransactionRequestDTO;
 import com.cryptowallet.dto.TransactionDTO;
 import com.cryptowallet.event.TransactionCreatedEvent;
@@ -68,20 +67,24 @@ public class TransactionService {
     public TransactionDTO processTransaction(SendTransactionRequestDTO dto) {
         log.info("Processing transaction from {} to {} amount={} {}", dto.fromAddress(), dto.toAddress(), dto.amount(), dto.currency());
 
-        if(!"BYPASS_SIGNATURE_FOR_TESTING_BYPASS".equals(dto.signature())) {
-            WalletDocument senderWallet = walletRepository.findByAddress(dto.fromAddress())
-                    .orElseThrow(() ->  new InvalidTransactionException("Sender wallet not found for signature verification."));
+        final String finalSignature;
 
-            if(!cryptoFacade.verifySignature(dto.toSignableString(), dto.signature(), dto.fromAddress())) {
+        if (dto.signature() != null && !dto.signature().isBlank() && !"BYPASS_SIGNATURE_FOR_TESTING_BYPASS".equals(dto.signature())) {
+            log.info("Verifying client-provided signature...");
+            if (!cryptoFacade.verifySignature(dto.toSignableString(), dto.signature(), dto.fromAddress())) {
                 throw new InvalidTransactionException("Transaction signature is invalid.");
             }
+            finalSignature = dto.signature();
         } else {
-            log.warn("Signature verification bypassed for testing purposes.");
+            log.info("Client signature not provided. Proceeding with server-side signing...");
+            // The service no longer handles private keys. It just passes the identifier (address).
+            finalSignature = cryptoFacade.signData(dto.toSignableString(), dto.fromAddress());
+            log.info("Server-side signature generated: {}", finalSignature);
         }
 
-        Optional<TransactionDocument> existingTransaction = transactionRepository.findBySignature(dto.signature());
+        Optional<TransactionDocument> existingTransaction = transactionRepository.findBySignature(finalSignature);
         if (existingTransaction.isPresent()) {
-            log.warn("Duplicate transaction detected with signature: {}. Status: {}", dto.signature(), existingTransaction.get().getStatus());
+            log.warn("Duplicate transaction detected with signature: {}. Status: {}", finalSignature, existingTransaction.get().getStatus());
             return TransactionMapper.toDTO(existingTransaction.get());
         }
 
@@ -90,7 +93,7 @@ public class TransactionService {
                 dto.toAddress(),
                 dto.amount(),
                 dto.currency(),
-                dto.signature()
+                finalSignature
         );
 
         try {
@@ -101,7 +104,7 @@ public class TransactionService {
 
             return TransactionMapper.toDTO(saved);
         } catch (DuplicateKeyException e) {
-            log.error("Duplicate signature detected during save for transaction: {}. This should have been caught earlier.", dto.signature());
+            log.error("Duplicate signature detected during save for transaction: {}. This should have been caught earlier.", finalSignature);
             throw new InvalidTransactionException("Duplicate transaction detected.");
         } catch (Exception e) {
             log.error("Failed to save initial transaction: {}", e.getMessage(), e);

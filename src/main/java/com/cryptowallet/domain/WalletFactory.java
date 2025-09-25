@@ -16,7 +16,7 @@ public class WalletFactory {
     public Wallet createWallet(String userId) {
         EncodedKeyPair keyPair = cryptoFacade.generateKeyPair();
         String publicKey = keyPair.getPublic();
-        String encryptedPrivateKey = cryptoFacade.encryptPrivateKey(keyPair.getPrivate());
+        String encryptedPrivateKey = cryptoFacade.encryptData(keyPair.getPrivate());
         String walletId = UUID.randomUUID().toString();
 
         return new Wallet(walletId, publicKey, encryptedPrivateKey, 0.0);

@@ -18,7 +18,6 @@ public class WalletDocument {
 
     @Indexed(unique = true)
     private String address; // public key serves as the address
-    private String encryptedPrivateKey;
 
     // Stores balances for different currencies, e.g., {"BTC": 1.5, "ETH": 10.2}
     @Field(targetType = FieldType.DECIMAL128)
@@ -28,10 +27,9 @@ public class WalletDocument {
         this.balances.put("USD", new BigDecimal("1000.00"));
     }
 
-    public WalletDocument(String userId, String address, String encryptedPrivateKey) {
+    public WalletDocument(String userId, String address) {
         this.userId = userId;
         this.address = address;
-        this.encryptedPrivateKey = encryptedPrivateKey;
         this.balances.put("USD", new BigDecimal("1000.00")); // Starting "fiat" for new wallets
     }
 
@@ -45,10 +43,6 @@ public class WalletDocument {
 
     public String getAddress() {
         return address;
-    }
-
-    public String getEncryptedPrivateKey() {
-        return encryptedPrivateKey;
     }
 
     public Map<String, BigDecimal> getBalances() {
@@ -65,10 +59,6 @@ public class WalletDocument {
 
     public void setAddress(String address) {
         this.address = address;
-    }
-
-    public void setEncryptedPrivateKey(String encryptedPrivateKey) {
-        this.encryptedPrivateKey = encryptedPrivateKey;
     }
 
     public void setBalances(Map<String, BigDecimal> balances) {
