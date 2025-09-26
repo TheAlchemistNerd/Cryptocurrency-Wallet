@@ -35,7 +35,7 @@ public class JwtAuthFilterTest {
     void shouldSetAuthenticationForValidJwt() throws Exception {
         String token = Jwts.builder()
                 .setSubject("user-id-123")
-                .claim("userName", "alice")
+                .claim("username", "alice")
                 .claim("roles", java.util.Collections.singletonList("ROLE_USER"))
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + 60000))

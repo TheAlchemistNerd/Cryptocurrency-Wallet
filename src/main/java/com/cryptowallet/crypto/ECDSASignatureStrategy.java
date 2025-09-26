@@ -1,12 +1,10 @@
 package com.cryptowallet.crypto;
 
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.util.Base64;
 
-@Component
 public class ECDSASignatureStrategy implements SignatureStrategy {
 
     private static final String ALGORITHM = "SHA256withECDSA";
